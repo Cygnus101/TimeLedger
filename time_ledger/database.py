@@ -12,15 +12,17 @@ DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "time_ledger.db"
 
 DEFAULT_CATEGORIES = [
-    ("Work", "#2563eb", 1),
+    ("Research_Work", "#1e40af", 1),
     ("Study", "#7c3aed", 1),
+    ("Personal_Projects", "#4f46e5", 1),
     ("Sleep", "#0f172a", 0),
     ("Workout", "#16a34a", 1),
     ("Meals", "#f97316", 0),
     ("Hygiene", "#06b6d4", 0),
-    ("Break", "#84cc16", 0),
     ("Travel", "#64748b", 0),
-    ("Entertainment", "#db2777", 0),
+    ("Game", "#db2727", 0),
+    ("Drawing", "#630564", 1),
+    ("Reading", "#eab308", 1),
     ("Misc", "#a16207", 0),
 ]
 
