@@ -27,7 +27,7 @@ st.set_page_config(page_title="Time Ledger", layout="wide")
 initialize_database()
 
 
-def render_analytics(title: str, blocks: pd.DataFrame) -> None:
+def render_analytics(title: str, blocks: pd.DataFrame, chart_key: str) -> None:
     st.subheader(title)
     totals = hours_by_category(blocks)
 
@@ -44,7 +44,7 @@ def render_analytics(title: str, blocks: pd.DataFrame) -> None:
         text_auto=".2f",
     )
     fig.update_layout(showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
 
 def render_daily_tab(selected_day: date, categories: list[str]) -> None:
@@ -79,13 +79,14 @@ def render_daily_tab(selected_day: date, categories: list[str]) -> None:
 
     day_blocks = get_day_blocks(selected_day)
     editable = day_blocks[["slot_index", "Time", "Category", "Note"]].copy()
+    editable[" "] = ""
 
     edited = st.data_editor(
         editable,
         hide_index=True,
         use_container_width=True,
         num_rows="fixed",
-        disabled=["slot_index", "Time"],
+        disabled=["slot_index", "Time", " "],
         column_config={
             "slot_index": None,
             "Time": st.column_config.TextColumn("Time", disabled=True),
@@ -93,14 +94,16 @@ def render_daily_tab(selected_day: date, categories: list[str]) -> None:
                 "Category",
                 options=[""] + categories,
                 required=False,
+                width="medium",
             ),
-            "Note": st.column_config.TextColumn("Note"),
+            "Note": st.column_config.TextColumn("Note", width="large"),
+            " ": st.column_config.TextColumn(" ", width="small", disabled=True),
         },
         key=f"daily_grid_{selected_day.isoformat()}",
     )
 
     if st.button("Save daily changes", type="primary"):
-        update_day_blocks(selected_day, edited)
+        update_day_blocks(selected_day, edited.drop(columns=[" "]))
         st.success("Daily grid saved.")
         st.rerun()
 
@@ -127,9 +130,9 @@ def render_analytics_tab(selected_day: date) -> None:
 
     day_col, week_col = st.columns(2)
     with day_col:
-        render_analytics("Selected Day", day_blocks)
+        render_analytics("Selected Day", day_blocks, "selected_day_hours_chart")
     with week_col:
-        render_analytics("Selected Week", week_blocks)
+        render_analytics("Selected Week", week_blocks, "selected_week_hours_chart")
 
 
 def main() -> None:
