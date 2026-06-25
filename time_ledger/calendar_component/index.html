@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      background: #ffffff;
+      color: #000000;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    .calendar-shell {
+      background: #ffffff;
+      box-sizing: border-box;
+      padding: 2px 0 10px;
+      width: 100%;
+    }
+
+    .calendar-header {
+      align-items: center;
+      display: grid;
+      grid-template-columns: 34px 1fr 34px;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .month-title {
+      align-items: center;
+      display: flex;
+      font-size: 1.05rem;
+      font-weight: 700;
+      gap: 4px;
+      justify-content: center;
+      text-align: center;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .nav-button {
+      background: #ffffff;
+      border: 1px solid #000000;
+      border-radius: 8px;
+      color: #000000;
+      height: 34px;
+      width: 34px;
+    }
+
+    .title-button {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: #000000;
+      font-weight: 700;
+      padding: 3px 5px;
+    }
+
+    .title-button:hover {
+      background: #000000;
+      color: #ffffff;
+    }
+
+    .nav-button:hover {
+      background: #000000;
+      border-color: #000000;
+      color: #ffffff;
+    }
+
+    .calendar-grid {
+      display: grid;
+      gap: 4px;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      width: 100%;
+    }
+
+    .picker-grid {
+      display: grid;
+      gap: 6px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 8px;
+      width: 100%;
+    }
+
+    .picker-button {
+      background: #ffffff;
+      border: 1px solid #000000;
+      border-radius: 8px;
+      color: #000000;
+      font-size: 0.78rem;
+      font-weight: 700;
+      height: 34px;
+      width: 100%;
+    }
+
+    .picker-button:hover,
+    .picker-button.active {
+      background: #000000;
+      color: #ffffff;
+    }
+
+    .weekday {
+      color: #000000;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding-bottom: 2px;
+      text-align: center;
+    }
+
+    .day-cell {
+      align-items: flex-start;
+      border-radius: 8px;
+      box-sizing: border-box;
+      color: #000000;
+      display: flex;
+      font-size: 0.78rem;
+      font-weight: 700;
+      height: 34px;
+      justify-content: flex-end;
+      padding: 5px;
+      width: 100%;
+    }
+
+    .day-cell.empty {
+      background: #ffffff;
+      border: 1px solid #000000;
+      color: #000000;
+    }
+
+    .day-cell.has-data {
+      background: #000000;
+      border: 1px solid #000000;
+      color: #ffffff;
+    }
+
+    .day-cell.selected {
+      box-shadow: 0 0 0 2px #000000 inset, 0 0 0 1px #ffffff;
+    }
+
+    .day-cell:hover {
+      background: #000000;
+      color: #ffffff;
+    }
+
+    .blank-cell {
+      height: 34px;
+    }
+
+    .legend {
+      color: #000000;
+      font-size: 0.78rem;
+      margin-top: 10px;
+    }
+
+    .dot {
+      border-radius: 999px;
+      display: inline-block;
+      height: 0.55rem;
+      margin: 0 0.2rem 0 0.6rem;
+      vertical-align: middle;
+      width: 0.55rem;
+    }
+
+    .dot:first-child {
+      margin-left: 0;
+    }
+
+    .logged {
+      background: #000000;
+      border: 1px solid #000000;
+    }
+
+    .no-data {
+      background: #ffffff;
+      border: 1px solid #000000;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    const shortMonthNames = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+    const weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    let currentMode = "days";
+    let yearPickerStart = null;
+
+    function sendMessage(type, data) {
+      window.parent.postMessage(
+        {
+          isStreamlitMessage: true,
+          type,
+          ...data,
+        },
+        "*"
+      );
+    }
+
+    function setComponentReady() {
+      sendMessage("streamlit:componentReady", { apiVersion: 1 });
+    }
+
+    function setFrameHeight(height) {
+      sendMessage("streamlit:setFrameHeight", { height });
+    }
+
+    function setComponentValue(value) {
+      sendMessage("streamlit:setComponentValue", {
+        value,
+        dataType: "json",
+      });
+    }
+
+    function isoDate(year, month, day) {
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+
+    function shiftMonth(year, month, delta) {
+      const shifted = new Date(year, month - 1 + delta, 1);
+      return {
+        year: shifted.getFullYear(),
+        month: shifted.getMonth() + 1,
+      };
+    }
+
+    function hexToRgb(hex) {
+      const normalized = hex.replace("#", "");
+      if (normalized.length !== 6) {
+        return null;
+      }
+
+      return {
+        r: parseInt(normalized.slice(0, 2), 16),
+        g: parseInt(normalized.slice(2, 4), 16),
+        b: parseInt(normalized.slice(4, 6), 16),
+      };
+    }
+
+    function textColorForBackground(hex) {
+      const rgb = hexToRgb(hex);
+      if (!rgb) {
+        return "#ffffff";
+      }
+
+      const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+      return brightness > 150 ? "#000000" : "#ffffff";
+    }
+
+    function monthCells(year, month) {
+      const firstDay = new Date(year, month - 1, 1);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const mondayOffset = (firstDay.getDay() + 6) % 7;
+      const cells = [];
+
+      for (let index = 0; index < mondayOffset; index += 1) {
+        cells.push(null);
+      }
+
+      for (let day = 1; day <= daysInMonth; day += 1) {
+        cells.push(day);
+      }
+
+      while (cells.length % 7 !== 0) {
+        cells.push(null);
+      }
+
+      return cells;
+    }
+
+    function emitEvent(payload) {
+      setComponentValue({
+        ...payload,
+        event_id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      });
+    }
+
+    function render(args) {
+      const root = document.getElementById("root");
+      const year = args.year;
+      const month = args.month;
+      const selectedDate = args.selected_date;
+      const activityDates = new Set(args.activity_dates || []);
+      const dayColors = args.day_colors || {};
+
+      if (yearPickerStart === null) {
+        yearPickerStart = year - 5;
+      }
+
+      root.innerHTML = "";
+
+      const shell = document.createElement("div");
+      shell.className = "calendar-shell";
+
+      const header = document.createElement("div");
+      header.className = "calendar-header";
+
+      const prev = document.createElement("button");
+      prev.className = "nav-button";
+      prev.type = "button";
+      prev.textContent = "‹";
+      prev.title = "Previous month";
+      prev.addEventListener("click", () => {
+        emitEvent({ action: "month", ...shiftMonth(year, month, -1) });
+      });
+
+      const title = document.createElement("div");
+      title.className = "month-title";
+
+      const monthTitle = document.createElement("button");
+      monthTitle.className = "title-button";
+      monthTitle.type = "button";
+      monthTitle.textContent = monthNames[month - 1];
+      monthTitle.title = "Change month";
+      monthTitle.addEventListener("click", () => {
+        currentMode = currentMode === "months" ? "days" : "months";
+        render(args);
+      });
+
+      const yearTitle = document.createElement("button");
+      yearTitle.className = "title-button";
+      yearTitle.type = "button";
+      yearTitle.textContent = year;
+      yearTitle.title = "Change year";
+      yearTitle.addEventListener("click", () => {
+        currentMode = currentMode === "years" ? "days" : "years";
+        yearPickerStart = year - 5;
+        render(args);
+      });
+
+      title.append(monthTitle, yearTitle);
+
+      const next = document.createElement("button");
+      next.className = "nav-button";
+      next.type = "button";
+      next.textContent = "›";
+      next.title = "Next month";
+      next.addEventListener("click", () => {
+        emitEvent({ action: "month", ...shiftMonth(year, month, 1) });
+      });
+
+      header.append(prev, title, next);
+      shell.appendChild(header);
+
+      if (currentMode === "months") {
+        const monthGrid = document.createElement("div");
+        monthGrid.className = "picker-grid";
+
+        shortMonthNames.forEach((monthName, index) => {
+          const monthNumber = index + 1;
+          const button = document.createElement("button");
+          button.className = [
+            "picker-button",
+            monthNumber === month ? "active" : "",
+          ].filter(Boolean).join(" ");
+          button.type = "button";
+          button.textContent = monthName;
+          button.addEventListener("click", () => {
+            currentMode = "days";
+            emitEvent({ action: "month", year, month: monthNumber });
+          });
+          monthGrid.appendChild(button);
+        });
+
+        shell.appendChild(monthGrid);
+        root.appendChild(shell);
+        setFrameHeight(Math.ceil(document.body.scrollHeight));
+        return;
+      }
+
+      if (currentMode === "years") {
+        const yearGrid = document.createElement("div");
+        yearGrid.className = "picker-grid";
+
+        const previousYears = document.createElement("button");
+        previousYears.className = "picker-button";
+        previousYears.type = "button";
+        previousYears.textContent = "‹";
+        previousYears.title = "Earlier years";
+        previousYears.addEventListener("click", () => {
+          yearPickerStart -= 12;
+          render(args);
+        });
+        yearGrid.appendChild(previousYears);
+
+        for (let yearValue = yearPickerStart; yearValue < yearPickerStart + 10; yearValue += 1) {
+          const button = document.createElement("button");
+          button.className = [
+            "picker-button",
+            yearValue === year ? "active" : "",
+          ].filter(Boolean).join(" ");
+          button.type = "button";
+          button.textContent = yearValue;
+          button.addEventListener("click", () => {
+            currentMode = "days";
+            emitEvent({ action: "month", year: yearValue, month });
+          });
+          yearGrid.appendChild(button);
+        }
+
+        const nextYears = document.createElement("button");
+        nextYears.className = "picker-button";
+        nextYears.type = "button";
+        nextYears.textContent = "›";
+        nextYears.title = "Later years";
+        nextYears.addEventListener("click", () => {
+          yearPickerStart += 12;
+          render(args);
+        });
+        yearGrid.appendChild(nextYears);
+
+        shell.appendChild(yearGrid);
+        root.appendChild(shell);
+        setFrameHeight(Math.ceil(document.body.scrollHeight));
+        return;
+      }
+
+      const grid = document.createElement("div");
+      grid.className = "calendar-grid";
+
+      weekdayNames.forEach((weekday) => {
+        const cell = document.createElement("div");
+        cell.className = "weekday";
+        cell.textContent = weekday;
+        grid.appendChild(cell);
+      });
+
+      monthCells(year, month).forEach((day) => {
+        if (day === null) {
+          const blank = document.createElement("div");
+          blank.className = "blank-cell";
+          grid.appendChild(blank);
+          return;
+        }
+
+        const dateText = isoDate(year, month, day);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = [
+          "day-cell",
+          activityDates.has(dateText) ? "has-data" : "empty",
+          dateText === selectedDate ? "selected" : "",
+        ].filter(Boolean).join(" ");
+        if (dayColors[dateText]) {
+          button.style.backgroundColor = dayColors[dateText];
+          button.style.borderColor = dayColors[dateText];
+          button.style.color = textColorForBackground(dayColors[dateText]);
+        }
+        button.textContent = day;
+        button.title = activityDates.has(dateText) ? "Logged data" : "No logged data";
+        button.addEventListener("click", () => {
+          emitEvent({ action: "select_day", date: dateText });
+        });
+        grid.appendChild(button);
+      });
+
+      shell.appendChild(grid);
+
+      const legend = document.createElement("div");
+      legend.className = "legend";
+      legend.innerHTML = '<span class="dot logged"></span>Logged <span class="dot no-data"></span>No data';
+      shell.appendChild(legend);
+
+      root.appendChild(shell);
+      setFrameHeight(Math.ceil(document.body.scrollHeight));
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.data.type !== "streamlit:render") {
+        return;
+      }
+      render(event.data.args || {});
+    });
+
+    setComponentReady();
+  </script>
+</body>
+</html>

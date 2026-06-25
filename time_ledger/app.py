@@ -4,20 +4,22 @@ Run locally:
     streamlit run app.py
 """
 
-import calendar
 from datetime import date, datetime
-from html import escape
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 
 from analytics import hours_by_category
 from database import (
     get_blocks_for_dates,
     get_categories,
+    get_category_colors,
     get_day_blocks,
     get_month_activity,
+    get_month_day_colors,
     initialize_database,
     update_day_blocks,
 )
@@ -27,6 +29,12 @@ from utils import week_dates
 st.set_page_config(page_title="Time Ledger", layout="wide")
 
 initialize_database()
+
+BASE_DIR = Path(__file__).resolve().parent
+calendar_component = components.declare_component(
+    "ledger_calendar",
+    path=str(BASE_DIR / "calendar_component"),
+)
 
 
 def query_param_date() -> date:
@@ -44,17 +52,55 @@ def query_param_date() -> date:
     return date.today()
 
 
-def shift_month(value: date, months: int) -> date:
-    month_index = value.month - 1 + months
-    year = value.year + month_index // 12
-    month = month_index % 12 + 1
-    return date(year, month, 1)
-
-
 def set_selected_day(value: date) -> None:
-    st.query_params["date"] = value.isoformat()
     st.session_state["selected_day"] = value
     st.session_state["calendar_month"] = value.replace(day=1)
+
+
+def set_calendar_month(value: date) -> None:
+    st.session_state["calendar_month"] = value
+
+
+def render_category_legend(category_colors: dict[str, str]) -> None:
+    if not category_colors:
+        return
+
+    items = "".join(
+        f"""
+        <div class="category-legend-item">
+            <span class="category-swatch" style="background: {color};"></span>
+            <span>{category}</span>
+        </div>
+        """
+        for category, color in category_colors.items()
+    )
+
+    st.markdown(
+        f"""
+        <style>
+            .category-legend {{
+                display: grid;
+                gap: 0.35rem;
+                margin-top: 0.75rem;
+            }}
+            .category-legend-item {{
+                align-items: center;
+                display: flex;
+                gap: 0.45rem;
+                font-size: 0.85rem;
+            }}
+            .category-swatch {{
+                border: 1px solid #000000;
+                border-radius: 999px;
+                display: inline-block;
+                height: 0.7rem;
+                width: 0.7rem;
+            }}
+        </style>
+        <div class="category-legend">{items}</div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_calendar(selected_day: date) -> None:
@@ -62,135 +108,44 @@ def render_calendar(selected_day: date) -> None:
         st.session_state["calendar_month"] = selected_day.replace(day=1)
 
     visible_month = st.session_state["calendar_month"]
-
-    left_col, title_col, right_col = st.columns([1, 4, 1])
-    with left_col:
-        if st.button("‹", key="previous_month", help="Previous month"):
-            st.session_state["calendar_month"] = shift_month(visible_month, -1)
-            st.rerun()
-    with title_col:
-        st.subheader(f"{calendar.month_name[visible_month.month]} {visible_month.year}")
-    with right_col:
-        if st.button("›", key="next_month", help="Next month"):
-            st.session_state["calendar_month"] = shift_month(visible_month, 1)
-            st.rerun()
-
     activity = get_month_activity(visible_month.year, visible_month.month)
-    month_rows = calendar.Calendar(firstweekday=0).monthdatescalendar(
-        visible_month.year,
-        visible_month.month,
+    day_colors = get_month_day_colors(visible_month.year, visible_month.month)
+
+    event = calendar_component(
+        selected_date=selected_day.isoformat(),
+        year=visible_month.year,
+        month=visible_month.month,
+        activity_dates=list(activity.keys()),
+        day_colors=day_colors,
+        key="ledger_calendar_component",
+        default=None,
     )
 
-    html_rows = []
-    for week in month_rows:
-        day_cells = []
-        for day_value in week:
-            if day_value.month != visible_month.month:
-                day_cells.append('<td class="muted"></td>')
-                continue
+    if not event:
+        return
 
-            day_text = day_value.isoformat()
-            classes = ["day-cell"]
-            classes.append("has-data" if activity.get(day_text) else "empty")
-            if day_value == selected_day:
-                classes.append("selected")
+    event_id = event.get("event_id")
+    if event_id == st.session_state.get("last_calendar_event_id"):
+        return
 
-            day_cells.append(
-                "<td>"
-                f'<a class="{" ".join(classes)}" href="?date={day_text}">'
-                f'<span class="day-number">{day_value.day}</span>'
-                "</a>"
-                "</td>"
-            )
-        html_rows.append(f"<tr>{''.join(day_cells)}</tr>")
+    st.session_state["last_calendar_event_id"] = event_id
 
-    weekday_headers = "".join(f"<th>{escape(name)}</th>" for name in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
-    st.markdown(
-        f"""
-        <style>
-            .ledger-calendar {{
-                width: 100%;
-                border-collapse: separate;
-                border-spacing: 8px;
-                table-layout: fixed;
-                margin-bottom: 1rem;
-            }}
-            .ledger-calendar th {{
-                color: #9ca3af;
-                font-size: 0.85rem;
-                font-weight: 600;
-                text-align: center;
-            }}
-            .ledger-calendar td {{
-                height: 58px;
-                padding: 0;
-            }}
-            .ledger-calendar .day-cell {{
-                align-items: flex-start;
-                border-radius: 8px;
-                box-sizing: border-box;
-                color: #e5e7eb;
-                display: flex;
-                height: 58px;
-                justify-content: flex-end;
-                padding: 8px;
-                text-decoration: none;
-                width: 100%;
-            }}
-            .ledger-calendar .empty {{
-                background: #374151;
-                border: 1px solid #4b5563;
-            }}
-            .ledger-calendar .has-data {{
-                background: #14532d;
-                border: 1px solid #22c55e;
-            }}
-            .ledger-calendar .selected {{
-                box-shadow: 0 0 0 2px #f8fafc inset;
-            }}
-            .ledger-calendar .muted {{
-                background: transparent;
-            }}
-            .ledger-calendar .day-number {{
-                font-weight: 700;
-            }}
-            .calendar-legend {{
-                color: #9ca3af;
-                font-size: 0.9rem;
-                margin-bottom: 1rem;
-            }}
-            .calendar-dot {{
-                border-radius: 999px;
-                display: inline-block;
-                height: 0.7rem;
-                margin: 0 0.25rem 0 0.75rem;
-                vertical-align: middle;
-                width: 0.7rem;
-            }}
-            .calendar-dot:first-child {{
-                margin-left: 0;
-            }}
-            .calendar-dot.green {{
-                background: #22c55e;
-            }}
-            .calendar-dot.gray {{
-                background: #6b7280;
-            }}
-        </style>
-        <table class="ledger-calendar">
-            <thead><tr>{weekday_headers}</tr></thead>
-            <tbody>{''.join(html_rows)}</tbody>
-        </table>
-        <div class="calendar-legend">
-            <span class="calendar-dot green"></span>Logged
-            <span class="calendar-dot gray"></span>No data
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    if event.get("action") == "select_day":
+        selected = datetime.strptime(event["date"], "%Y-%m-%d").date()
+        set_selected_day(selected)
+        st.rerun()
+
+    if event.get("action") == "month":
+        set_calendar_month(date(int(event["year"]), int(event["month"]), 1))
+        st.rerun()
 
 
-def render_analytics(title: str, blocks: pd.DataFrame, chart_key: str) -> None:
+def render_analytics(
+    title: str,
+    blocks: pd.DataFrame,
+    chart_key: str,
+    category_colors: dict[str, str],
+) -> None:
     st.subheader(title)
     totals = hours_by_category(blocks)
 
@@ -199,20 +154,46 @@ def render_analytics(title: str, blocks: pd.DataFrame, chart_key: str) -> None:
         return
 
     st.dataframe(totals, hide_index=True, use_container_width=True)
-    fig = px.bar(
+    fig = px.pie(
         totals,
-        x="category",
-        y="hours",
+        names="category",
+        values="hours",
+        color_discrete_map=category_colors,
         labels={"category": "Category", "hours": "Hours"},
-        text_auto=".2f",
+        hole=0.35,
     )
-    fig.update_layout(showlegend=False)
+    fig.update_traces(textposition="inside", textinfo="percent+label")
+    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
 
-def render_daily_tab(selected_day: date, categories: list[str]) -> None:
+def text_color_for_background(hex_color: str) -> str:
+    value = hex_color.lstrip("#")
+    if len(value) != 6:
+        return "#ffffff"
+
+    red = int(value[0:2], 16)
+    green = int(value[2:4], 16)
+    blue = int(value[4:6], 16)
+    brightness = (red * 299 + green * 587 + blue * 114) / 1000
+    return "#000000" if brightness > 150 else "#ffffff"
+
+
+def color_category_cell(value, category_colors: dict[str, str]) -> str:
+    color = category_colors.get(value)
+    if not color:
+        return ""
+
+    text_color = text_color_for_background(color)
+    return f"background-color: {color}; color: {text_color}; font-weight: 700;"
+
+
+def render_daily_tab(
+    selected_day: date,
+    categories: list[str],
+    category_colors: dict[str, str],
+) -> None:
     st.header("Daily Grid")
-    render_calendar(selected_day)
     st.caption(f"Selected day: {selected_day:%A, %B %d, %Y}")
 
     day_blocks = get_day_blocks(selected_day)
@@ -246,7 +227,7 @@ def render_daily_tab(selected_day: date, categories: list[str]) -> None:
         st.rerun()
 
 
-def render_week_tab(selected_day: date) -> None:
+def render_week_tab(selected_day: date, category_colors: dict[str, str]) -> None:
     st.header("Week View")
     days = week_dates(selected_day)
     blocks = get_blocks_for_dates(days)
@@ -258,49 +239,73 @@ def render_week_tab(selected_day: date) -> None:
     ordered_columns = ["Time"] + [day.strftime("%a %m/%d") for day in days]
     week_grid = week_grid.reindex(columns=ordered_columns)
 
-    st.dataframe(week_grid, hide_index=True, use_container_width=True, height=720)
+    styled_grid = week_grid.style.map(
+        lambda value: color_category_cell(value, category_colors),
+        subset=ordered_columns[1:],
+    )
+    st.dataframe(styled_grid, hide_index=True, use_container_width=True, height=720)
 
 
-def render_analytics_tab(selected_day: date) -> None:
+def render_analytics_tab(selected_day: date, category_colors: dict[str, str]) -> None:
     st.header("Analytics")
     day_blocks = get_day_blocks(selected_day)
-    week_blocks = get_blocks_for_dates(week_dates(selected_day))
+    days = week_dates(selected_day)
+    week_blocks = get_blocks_for_dates(days)
+    day_title = selected_day.strftime("%A, %B %d, %Y")
+    week_title = f"{days[0]:%b %d, %Y} - {days[-1]:%b %d, %Y}"
 
     day_col, week_col = st.columns(2)
     with day_col:
-        render_analytics("Selected Day", day_blocks, "selected_day_hours_chart")
+        render_analytics(day_title, day_blocks, "selected_day_hours_chart", category_colors)
     with week_col:
-        render_analytics("Selected Week", week_blocks, "selected_week_hours_chart")
+        render_analytics(week_title, week_blocks, "selected_week_hours_chart", category_colors)
 
 
 def main() -> None:
+    st.markdown(
+        """
+        <style>
+            section[data-testid="stSidebar"] {
+                background: #ffffff;
+            }
+            section[data-testid="stSidebar"] * {
+                color: #000000;
+            }
+            section[data-testid="stSidebar"] button {
+                color: inherit;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title("Time Ledger")
     st.caption("Log your day in 15-minute blocks.")
 
     categories = get_categories()
-    selected_day = query_param_date()
-    previous_selected_day = st.session_state.get("selected_day")
-    st.session_state["selected_day"] = selected_day
-    if previous_selected_day != selected_day or "calendar_month" not in st.session_state:
+    category_colors = get_category_colors()
+    if "selected_day" not in st.session_state:
+        st.session_state["selected_day"] = query_param_date()
+
+    selected_day = st.session_state["selected_day"]
+    if "calendar_month" not in st.session_state:
         st.session_state["calendar_month"] = selected_day.replace(day=1)
 
-    sidebar_day = st.sidebar.date_input(
-        "Date",
-        value=selected_day,
-        key=f"sidebar_date_{selected_day.isoformat()}",
-    )
-    if sidebar_day != selected_day:
-        set_selected_day(sidebar_day)
-        st.rerun()
+    with st.sidebar:
+        st.header("Calendar")
+        render_calendar(selected_day)
+        st.caption(f"Selected: {selected_day:%b %d, %Y}")
+        st.subheader("Categories")
+        render_category_legend(category_colors)
 
     daily_tab, week_tab, analytics_tab = st.tabs(["Daily", "Week", "Analytics"])
 
     with daily_tab:
-        render_daily_tab(selected_day, categories)
+        render_daily_tab(selected_day, categories, category_colors)
     with week_tab:
-        render_week_tab(selected_day)
+        render_week_tab(selected_day, category_colors)
     with analytics_tab:
-        render_analytics_tab(selected_day)
+        render_analytics_tab(selected_day, category_colors)
 
 
 if __name__ == "__main__":

@@ -77,6 +77,19 @@ def get_categories() -> list[str]:
     return [row["name"] for row in rows]
 
 
+def get_category_colors() -> dict[str, str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT name, COALESCE(color, '#000000') AS color
+            FROM categories
+            ORDER BY id
+            """
+        ).fetchall()
+
+    return {row["name"]: row["color"] for row in rows}
+
+
 def ensure_day_records(day) -> None:
     day_text = date_to_text(day)
     now = datetime.now().isoformat(timespec="seconds")
@@ -216,6 +229,34 @@ def get_month_activity(year: int, month: int) -> dict[str, bool]:
         ).fetchall()
 
     return {row["date"]: True for row in rows}
+
+
+def get_month_day_colors(year: int, month: int) -> dict[str, str]:
+    month_prefix = f"{year:04d}-{month:02d}"
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                tb.date,
+                tb.category,
+                COALESCE(c.color, '#000000') AS color,
+                COUNT(*) AS block_count
+            FROM time_blocks tb
+            LEFT JOIN categories c ON c.name = tb.category
+            WHERE substr(tb.date, 1, 7) = ?
+              AND COALESCE(TRIM(tb.category), '') != ''
+            GROUP BY tb.date, tb.category, c.color
+            ORDER BY tb.date, block_count DESC, tb.category
+            """,
+            (month_prefix,),
+        ).fetchall()
+
+    day_colors = {}
+    for row in rows:
+        day_colors.setdefault(row["date"], row["color"])
+
+    return day_colors
 
 
 def clean_optional_value(value):
