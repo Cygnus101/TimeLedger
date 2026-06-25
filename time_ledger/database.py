@@ -197,6 +197,27 @@ def get_blocks_for_dates(days: list) -> pd.DataFrame:
         )
 
 
+def get_month_activity(year: int, month: int) -> dict[str, bool]:
+    month_prefix = f"{year:04d}-{month:02d}"
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT date
+            FROM time_blocks
+            WHERE substr(date, 1, 7) = ?
+              AND (
+                  COALESCE(TRIM(category), '') != ''
+                  OR COALESCE(TRIM(note), '') != ''
+              )
+            GROUP BY date
+            """,
+            (month_prefix,),
+        ).fetchall()
+
+    return {row["date"]: True for row in rows}
+
+
 def clean_optional_value(value):
     if value is None:
         return None
