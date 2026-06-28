@@ -12,18 +12,18 @@ DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "time_ledger.db"
 
 DEFAULT_CATEGORIES = [
-    ("Research_Work", "#1e40af", 1),
-    ("Study", "#7c3aed", 1),
-    ("Personal_Projects", "#4f46e5", 1),
-    ("Sleep", "#0f172a", 0),
-    ("Workout", "#16a34a", 1),
-    ("Meals", "#f97316", 0),
+    ("Research_Work", "#15803d", 1),
+    ("Study", "#22c55e", 1),
+    ("Personal_Projects", "#86efac", 1),
+    ("Sleep", "#7f1d1d", 0),
+    ("Workout", "#1d4ed8", 1),
+    ("Meals", "#7e22ce", 0),
     ("Hygiene", "#06b6d4", 0),
-    ("Travel", "#64748b", 0),
-    ("Game", "#db2727", 0),
-    ("Drawing", "#630564", 1),
-    ("Reading", "#eab308", 1),
-    ("Misc", "#a16207", 0),
+    ("Travel", "#a855f7", 0),
+    ("Game", "#dc2626", 0),
+    ("Drawing", "#3b82f6", 1),
+    ("Reading", "#93c5fd", 1),
+    ("Misc", "#fca5a5", 0),
 ]
 
 
@@ -68,6 +68,14 @@ def initialize_database() -> None:
             VALUES (?, ?, ?)
             """,
             DEFAULT_CATEGORIES,
+        )
+        conn.executemany(
+            """
+            UPDATE categories
+            SET color = ?, is_productive = ?
+            WHERE name = ?
+            """,
+            [(color, is_productive, name) for name, color, is_productive in DEFAULT_CATEGORIES],
         )
 
 
