@@ -158,7 +158,9 @@ def render_analytics(
         totals,
         names="category",
         values="hours",
+        color="category",
         color_discrete_map=category_colors,
+        category_orders={"category": totals["category"].tolist()},
         labels={"category": "Category", "hours": "Hours"},
         hole=0.35,
     )
