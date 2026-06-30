@@ -19,7 +19,6 @@ from database import (
     get_category_colors,
     get_day_blocks,
     get_month_activity,
-    get_month_day_colors,
     initialize_database,
     update_day_blocks,
 )
@@ -109,14 +108,12 @@ def render_calendar(selected_day: date) -> None:
 
     visible_month = st.session_state["calendar_month"]
     activity = get_month_activity(visible_month.year, visible_month.month)
-    day_colors = get_month_day_colors(visible_month.year, visible_month.month)
 
     event = calendar_component(
         selected_date=selected_day.isoformat(),
         year=visible_month.year,
         month=visible_month.month,
         activity_dates=list(activity.keys()),
-        day_colors=day_colors,
         key="ledger_calendar_component",
         default=None,
     )
